@@ -764,13 +764,15 @@ class BazaDanychWindow(tk.Toplevel):
                         )
                     self.after(0, on_sys_exit)
                     return
-            except Exception as e:
-                def on_err():
+            except Exception as err:
+
+                def on_err(err=err):
                     try:
                         self.btn_scal.config(bg="#f28b82", activebackground="#ea4335")
                     except Exception:
                         pass
-                    messagebox.showerror("Scalanie", f"Błąd scalania:\n{e}")
+                    messagebox.showerror("Scalanie", f"Błąd scalania:\n{err}")
+
                 self.after(0, on_err)
                 return
 

@@ -283,11 +283,17 @@ def dedupe_preserve_order(iterable):
 def append_rows_csv(path: Path, rows: list[dict]):
     new_file = not path.exists()
     with path.open("a", encoding="utf-8-sig", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=FIELDS)
+        w = csv.DictWriter(
+            fh,
+            fieldnames=FIELDS,
+            delimiter=";",          # ✅ KLUCZOWE
+            quoting=csv.QUOTE_MINIMAL
+        )
         if new_file:
             w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k, "") for k in FIELDS})
+
 
 
 def count_saved_rows(out_path: Path) -> int:
