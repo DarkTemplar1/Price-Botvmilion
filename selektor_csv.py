@@ -310,9 +310,6 @@ class App(tk.Tk):
         self.automat_btn = tk.Button(row_ctrl1, text="Automat", command=self.automate)
         self.automat_btn.pack(side="left", padx=(6, 0))
 
-        self.hybrid_btn = tk.Button(row_ctrl1, text="Hybryda", command=self.run_hybrid)
-        self.hybrid_btn.pack(side="left", padx=(6, 0))
-
         # ---------- Podgląd ----------
         group_preview = ttk.LabelFrame(root, text="Bieżący wiersz (podgląd)")
         group_preview.pack(fill="both", expand=True, pady=(8, 0))
@@ -458,9 +455,6 @@ class App(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def run_hybrid(self):
-        extra = [self.input_file_var.get()] if self.input_file_var.get() else []
-        self._run_script(["hybryda.py"], extra_args=extra)
 
     def choose_base_folder(self):
         d = filedialog.askdirectory(title="Wybierz folder bazowy", initialdir=self.folder_var.get())
