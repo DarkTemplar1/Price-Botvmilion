@@ -409,12 +409,19 @@ class App(tk.Tk):
 
         def worker():
             try:
+                env = os.environ.copy()
+                # Wymuś UTF-8 w procesie potomnym, żeby GUI nie wywalało się na polskich znakach
+                env["PYTHONIOENCODING"] = "utf-8"
+
                 proc = subprocess.Popen(
                     [sys.executable, str(script_path), in_path],
                     cwd=str(here),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=env,
                     close_fds=(os.name != "nt"),
                     creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
                 )
