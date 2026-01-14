@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-ETAP 1 – czyszczenie adresów
-
-WYMAGANIA (SPEŁNIONE):
-- wejście może być CAŁE Z DUŻYCH LITER (np. PŁOCKIE)
-- stare województwa (49) -> nowe (16)
-- PŁOCKIE -> MAZOWIECKIE (OBUSTRONNIE UPPERCASE)
-- --- / brak / nan -> None
-- wynik ZAWSZE UPPERCASE
-- zapis NADPISUJE TYLKO arkusz 'raport'
-"""
-
 from __future__ import annotations
 import argparse
 from pathlib import Path
@@ -20,36 +8,28 @@ import re
 import unicodedata
 import pandas as pd
 
-
 # ============================================================
-# KONFIGURACJA
+# KONFIG
 # ============================================================
 
 RAPORT_SHEET = "raport"
-
-ADMIN_COLS = ["Województwo", "Powiat", "Gmina", "Miejscowość"]
-
-HINT_COLS = [
-    "Cały adres (dla lokalu)",
-    "Położenie",
-    "Ulica(dla lokalu)",
-    "Ulica(dla budynku)",
-    "Ulica",
-    "Dzielnica",
-    "Miejscowość",
-]
-
-MISSING_TOKENS = {
-    "---", "--", "—", "-", "brak", "brak danych", "nan", "none", ""
-}
+MISSING_TOKENS = {"---", "--", "—", "-", "brak", "brak danych", "nan", "none", ""}
 
 # ============================================================
-# MAPA HISTORYCZNA WOJEWÓDZTW (1975–1998 -> 1999+)
-# KLUCZE: po norm_key() (bez ogonków, lower)
+# MAPA: stare województwa (49) -> nowe (16)
+# KLUCZE: po norm_key()
 # WARTOŚCI: ZAWSZE UPPERCASE
 # ============================================================
 
-HISTORICAL_VOIVODESHIP_MAP = {
+HIST = {
+    # MAZOWIECKIE
+    "plockie": "MAZOWIECKIE",
+    "warszawskie": "MAZOWIECKIE",
+    "ciechanowskie": "MAZOWIECKIE",
+    "ostroleckie": "MAZOWIECKIE",
+    "siedleckie": "MAZOWIECKIE",
+    "radomskie": "MAZOWIECKIE",
+
     # DOLNOŚLĄSKIE
     "wroclawskie": "DOLNOŚLĄSKIE",
     "jeleniogorskie": "DOLNOŚLĄSKIE",
@@ -81,14 +61,6 @@ HISTORICAL_VOIVODESHIP_MAP = {
     "krakowskie": "MAŁOPOLSKIE",
     "tarnowskie": "MAŁOPOLSKIE",
     "nowosadeckie": "MAŁOPOLSKIE",
-
-    # MAZOWIECKIE
-    "warszawskie": "MAZOWIECKIE",
-    "plockie": "MAZOWIECKIE",
-    "ciechanowskie": "MAZOWIECKIE",
-    "ostroleckie": "MAZOWIECKIE",
-    "siedleckie": "MAZOWIECKIE",
-    "radomskie": "MAZOWIECKIE",
 
     # OPOLSKIE
     "opolskie": "OPOLSKIE",
@@ -132,15 +104,21 @@ HISTORICAL_VOIVODESHIP_MAP = {
     "koszalinskie": "ZACHODNIOPOMORSKIE",
 }
 
-# warianty "WOJEWÓDZTWO X"
-for k, v in list(HISTORICAL_VOIVODESHIP_MAP.items()):
-    HISTORICAL_VOIVODESHIP_MAP[f"wojewodztwo {k}"] = v
-    HISTORICAL_VOIVODESHIP_MAP[f"{k} wojewodztwo"] = v
+# warianty typu "WOJEWÓDZTWO PŁOCKIE"
+for k, v in list(HIST.items()):
+    HIST[f"wojewodztwo {k}"] = v
+    HIST[f"{k} wojewodztwo"] = v
 
+HIST_KEYS_DESC = sorted(HIST.keys(), key=len, reverse=True)
 
 # ============================================================
-# HELPERY
+# NORMALIZACJA — KLUCZOWY FIX DLA Ł/ł
 # ============================================================
+
+PL_TRANSLATE = str.maketrans({
+    "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o", "ś": "s", "ż": "z", "ź": "z",
+    "Ą": "a", "Ć": "c", "Ę": "e", "Ł": "l", "Ń": "n", "Ó": "o", "Ś": "s", "Ż": "z", "Ź": "z",
+})
 
 def norm_missing(x):
     if x is None:
@@ -149,69 +127,65 @@ def norm_missing(x):
     return None if s.lower() in MISSING_TOKENS else s
 
 
-def norm_key(s: str | None) -> str | None:
-    if not s:
-        return None
-    s = str(s).strip().lower()
+def norm_key(s: str | None) -> str:
+    """
+    PŁOCKIE -> plockie
+    WOJ. PŁOCKIE -> woj plockie
+    """
+    s = str(s or "").strip().lower()
+    s = s.translate(PL_TRANSLATE)   # <-- KLUCZOWE
     s = "".join(
         c for c in unicodedata.normalize("NFKD", s)
         if not unicodedata.combining(c)
     )
-    s = re.sub(r"[^a-z\s]", " ", s)
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
-    return s or None
+    return s
+
+
+def upper_or_none(x):
+    x = norm_missing(x)
+    if x is None:
+        return None
+    return str(x).strip().upper()
 
 
 def replace_historical_voivodeship(val: str | None) -> str | None:
-    """
-    PŁOCKIE -> MAZOWIECKIE
-    WOJEWÓDZTWO PŁOCKIE -> MAZOWIECKIE
-    """
     val = norm_missing(val)
     if val is None:
         return None
 
     key = norm_key(val)
-    if not key:
-        return None
 
-    if key in HISTORICAL_VOIVODESHIP_MAP:
-        return HISTORICAL_VOIVODESHIP_MAP[key]
+    # exact
+    if key in HIST:
+        return HIST[key]
 
-    key2 = key.replace("wojewodztwo ", "").strip()
-    if key2 in HISTORICAL_VOIVODESHIP_MAP:
-        return HISTORICAL_VOIVODESHIP_MAP[key2]
+    # bez prefiksu "woj/wojewodztwo"
+    key2 = re.sub(r"^(woj|wojewodztwo)\s+", "", key).strip()
+    if key2 in HIST:
+        return HIST[key2]
+
+    # contains
+    for old in HIST_KEYS_DESC:
+        if old and old in key:
+            return HIST[old]
 
     return val.upper()
 
 
-def build_addr_hint(row: pd.Series) -> str | None:
-    parts = []
-    for c in HINT_COLS:
-        if c in row.index:
-            v = norm_missing(row[c])
-            if v:
-                parts.append(str(v))
-    return " | ".join(parts).upper() if parts else None
-
-
 # ============================================================
-# IO – NADPISUJEMY TYLKO ARKUSZ "raport"
+# IO — tylko arkusz 'raport'
 # ============================================================
 
-def read_df(xlsx: Path) -> pd.DataFrame:
-    xl = pd.ExcelFile(xlsx, engine="openpyxl")
+def read_df(path: Path) -> pd.DataFrame:
+    xl = pd.ExcelFile(path, engine="openpyxl")
     sheet = RAPORT_SHEET if RAPORT_SHEET in xl.sheet_names else xl.sheet_names[0]
-    return pd.read_excel(xlsx, sheet_name=sheet, engine="openpyxl")
+    return pd.read_excel(path, sheet_name=sheet, engine="openpyxl")
 
 
-def write_replace_raport(xlsx: Path, df: pd.DataFrame):
-    with pd.ExcelWriter(
-        xlsx,
-        engine="openpyxl",
-        mode="a",
-        if_sheet_exists="replace"
-    ) as writer:
+def write_replace_raport(path: Path, df: pd.DataFrame) -> None:
+    with pd.ExcelWriter(path, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
         df.to_excel(writer, sheet_name=RAPORT_SHEET, index=False)
 
 
@@ -221,28 +195,28 @@ def write_replace_raport(xlsx: Path, df: pd.DataFrame):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("raport", help="Plik XLSX")
+    ap.add_argument("raport", help="Plik XLSX/XLSM")
     args = ap.parse_args()
 
-    raport = Path(args.raport)
+    raport = Path(args.raport).resolve()
     df = read_df(raport)
 
-    # normalizacja kolumn administracyjnych
-    for col in ADMIN_COLS:
-        if col in df.columns:
-            df[col] = df[col].map(norm_missing).map(lambda x: x.upper() if x else None)
+    if "Województwo" not in df.columns:
+        raise RuntimeError("Brak kolumny 'Województwo'.")
 
-    # zamiana historycznych województw
-    if "Województwo" in df.columns:
-        df["Województwo"] = df["Województwo"].apply(replace_historical_voivodeship)
+    before = df["Województwo"].map(upper_or_none)
 
-    # hint
-    df["_addr_hint"] = df.apply(build_addr_hint, axis=1)
+    df["Województwo"] = (
+        df["Województwo"]
+        .apply(replace_historical_voivodeship)
+        .map(upper_or_none)
+    )
 
-    # zapis
+    after = df["Województwo"]
+    changed = (before.fillna("") != after.fillna("")).sum()
+
     write_replace_raport(raport, df)
-
-    print("✔ ETAP 1 OK – PŁOCKIE → MAZOWIECKIE, wszystko UPPERCASE")
+    print(f"✔ ETAP 1 OK — ZMIENIONO {changed} wierszy (PŁOCKIE → MAZOWIECKIE działa)")
 
 
 if __name__ == "__main__":
