@@ -27,10 +27,18 @@ import numpy as np
 
 import tkinter as tk
 from tkinter import ttk
-
+import importlib.util
 import requests
 from openpyxl import load_workbook
+from pathlib import Path
 
+def import_local_automat():
+    here = Path(__file__).resolve().parent
+    p = here / "automat.py"
+    spec = importlib.util.spec_from_file_location("automat", str(p))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 # =========================
 # Helpers
@@ -659,101 +667,24 @@ def _process_row(
         print(f"[Automat] Wiersz {idx+1}: brak obszaru – pomijam.")
         return
 
-    def _get(cands):
-        c = _find_col(df_raport.columns, cands)
-        return _trim_after_semicolon(row[c]) if c else ""
-
-    woj_r = _get(["Województwo", "Wojewodztwo", "wojewodztwo", "woj"])
-    pow_r = _get(["Powiat"])
-    gmi_r = _get(["Gmina"])
-    mia_r = _get(["Miejscowość", "Miejscowosc", "Miasto", "miejscowosc", "miasto"])
-    dzl_r = _get(["Dzielnica", "Osiedle"])
-    uli_r = _get(["Ulica", "Ulica(dla budynku)", "Ulica(dla lokalu)"])
-
-    pop_val = None
-    if pop_resolver is not None:
-        pop_val = pop_resolver.get_population(woj_r, pow_r, gmi_r, mia_r, dzl_r)
-
-    if pop_val is not None:
-        margin_m2_row, margin_pct_row = rules_for_population(pop_val)
-        print(f"[Automat] {kw_value}: '{mia_r}'/'{dzl_r}' (pop={pop_val}) → margines {margin_m2_row} m², negocjacje {margin_pct_row}%.")
-    else:
-        margin_m2_row = float(margin_m2_default or 0.0)
-        margin_pct_row = float(margin_pct_default or 0.0)
-        print(f"[Automat] {kw_value}: brak danych o ludności (ludnosc.csv/BDL) – używam marginesu globalnego {margin_m2_row} m² oraz % negocjacyjnego {margin_pct_row}%.")
-
-    delta = abs(float(margin_m2_row))
-    low, high = max(0.0, area_val - delta), area_val + delta
-
-    m = df_pl[col_area_pl].map(_to_float_maybe)
-    mask_area = (m >= low) & (m <= high)
-
-    mask_full = mask_area.copy()
-    mask_full &= _eq_mask(df_pl, ["wojewodztwo", "województwo"], woj_r)
-    mask_full &= _eq_mask(df_pl, ["powiat"], pow_r)
-    mask_full &= _eq_mask(df_pl, ["gmina"], gmi_r)
-    mask_full &= _eq_mask(df_pl, ["miejscowosc", "miasto", "miejscowość"], mia_r)
-    if dzl_r:
-        mask_full &= _eq_mask(df_pl, ["dzielnica", "osiedle"], dzl_r)
-    if uli_r:
-        mask_full &= _eq_mask(df_pl, ["ulica"], uli_r)
-
-    df_sel = df_pl[mask_full].copy()
-
-    # fallbacki cenowe jak wcześniej
-    if df_sel.empty and uli_r:
-        mask_ul = mask_area.copy()
-        mask_ul &= _eq_mask(df_pl, ["wojewodztwo", "województwo"], woj_r)
-        mask_ul &= _eq_mask(df_pl, ["miejscowosc", "miasto", "miejscowość"], mia_r)
-        if dzl_r:
-            mask_ul &= _eq_mask(df_pl, ["dzielnica", "osiedle"], dzl_r)
-        mask_ul &= _eq_mask(df_pl, ["ulica"], uli_r)
-        df_sel = df_pl[mask_ul].copy()
-
-    if df_sel.empty and dzl_r:
-        mask_dziel = mask_area.copy()
-        mask_dziel &= _eq_mask(df_pl, ["wojewodztwo", "województwo"], woj_r)
-        mask_dziel &= _eq_mask(df_pl, ["miejscowosc", "miasto", "miejscowość"], mia_r)
-        mask_dziel &= _eq_mask(df_pl, ["dzielnica", "osiedle"], dzl_r)
-        df_sel = df_pl[mask_dziel].copy()
-
-    if df_sel.empty:
-        mask_city = mask_area.copy()
-        mask_city &= _eq_mask(df_pl, ["wojewodztwo", "województwo"], woj_r)
-        mask_city &= _eq_mask(df_pl, ["miejscowosc", "miasto", "miejscowość"], mia_r)
-        df_sel = df_pl[mask_city].copy()
-
-    if df_sel.empty:
-        print(f"[Automat] {kw_value}: brak dopasowanych rekordów w bazie (po filtrach).")
-        return
-
-    prices = df_sel[col_price_pl].map(_to_float_maybe).dropna()
-    if prices.empty:
-        print(f"[Automat] {kw_value}: brak cen w dopasowanych rekordach.")
-        return
-
-    mean_price = float(prices.mean())
-
-    mean_col = _find_col(df_raport.columns, ["Średnia cena za m2 ( z bazy)", "Srednia cena za m2 ( z bazy)"])
-    corr_col = _find_col(df_raport.columns, ["Średnia skorygowana cena za m2", "Srednia skorygowana cena za m2"])
-    val_col  = _find_col(df_raport.columns, ["Statystyczna wartość nieruchomości", "Statystyczna wartosc nieruchomosci"])
-
-    if not mean_col or not corr_col or not val_col:
-        print(f"[Automat] {kw_value}: brak wymaganych kolumn wynikowych w raporcie.")
-        return
-
-    # ŚREDNIA CENA ZA M2 (Z BAZY)
+    # =========================
+    # TRYB STRICT (adres 100% wymagany)
+    # Jeśli brakuje danych adresowych lub brak dopasowań w bazie,
+    # wpisujemy komunikat w kolumnach wynikowych zamiast liczyć.
+    # =========================
+    STRICT_MSG = "BRAK LUB NIEPEŁNY ADRESU – WPISZ ADRES MANUALNIE"
+    # =========================
+    # WYNIKI – ZAOKRĄGLENIE DO 2 MIEJSC
+    # =========================
     mean_price_rounded = round(float(mean_price), 2)
     df_raport.at[idx, mean_col] = mean_price_rounded
 
-    # ŚREDNIA SKORYGOWANA CENA ZA M2
     corrected_price = mean_price_rounded * (1.0 - float(margin_pct_row or 0.0) / 100.0)
-    corrected_price_rounded = round(corrected_price, 2)
+    corrected_price_rounded = round(float(corrected_price), 2)
     df_raport.at[idx, corr_col] = corrected_price_rounded
 
-    # STATYSTYCZNA WARTOŚĆ NIERUCHOMOŚCI
     value = corrected_price_rounded * float(area_val)
-    df_raport.at[idx, val_col] = round(value, 2)
+    df_raport.at[idx, val_col] = round(float(value), 2)
 
     print(f"[Automat] {kw_value}: dopasowano {len(df_sel)}, średnia {mean_price:.2f}, skorygowana {corrected_price:.2f}, wartość {value:.2f}.")
 
