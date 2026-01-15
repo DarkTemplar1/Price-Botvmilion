@@ -742,13 +742,18 @@ def _process_row(
         print(f"[Automat] {kw_value}: brak wymaganych kolumn wynikowych w raporcie.")
         return
 
-    df_raport.at[idx, mean_col] = mean_price
+    # ŚREDNIA CENA ZA M2 (Z BAZY)
+    mean_price_rounded = round(float(mean_price), 2)
+    df_raport.at[idx, mean_col] = mean_price_rounded
 
-    corrected_price = mean_price * (1.0 - float(margin_pct_row or 0.0) / 100.0)
-    df_raport.at[idx, corr_col] = corrected_price
+    # ŚREDNIA SKORYGOWANA CENA ZA M2
+    corrected_price = mean_price_rounded * (1.0 - float(margin_pct_row or 0.0) / 100.0)
+    corrected_price_rounded = round(corrected_price, 2)
+    df_raport.at[idx, corr_col] = corrected_price_rounded
 
-    value = corrected_price * float(area_val)
-    df_raport.at[idx, val_col] = value
+    # STATYSTYCZNA WARTOŚĆ NIERUCHOMOŚCI
+    value = corrected_price_rounded * float(area_val)
+    df_raport.at[idx, val_col] = round(value, 2)
 
     print(f"[Automat] {kw_value}: dopasowano {len(df_sel)}, średnia {mean_price:.2f}, skorygowana {corrected_price:.2f}, wartość {value:.2f}.")
 
