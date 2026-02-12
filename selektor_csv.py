@@ -730,6 +730,7 @@ class App(tk.Tk):
                 idx=int(self.current_idx),
                 base_dir=base_dir,
                 out_dir=out_dir,
+                report_path=self.input_path,
                 margin_m2_default=float(self.margin_m2_var.get() or 15.0),
                 margin_pct_default=float(self.margin_pct_var.get() or 15.0),
                 min_hits=5,

@@ -195,22 +195,43 @@ def _to_float_maybe(x):
 # Ludność (lokalny CSV)
 # =========================
 
-def _find_ludnosc_csv(base_dir: Path) -> Optional[Path]:
-    candidates = [
-        base_dir / "ludnosc.csv",
-        base_dir / "Ludnosc.csv",
-        base_dir / "ludnosc_miejscowosci.csv",
-        base_dir / "ludnosc_miejscowosci_uzupelnione_2025.csv",
-        Path(__file__).resolve().parent / "ludnosc.csv",
-        Path.cwd() / "ludnosc.csv",
-    ]
+def _find_ludnosc_csv(base_dir: Path, report_path: Optional[Path] = None) -> Path:
+    """
+    Używamy TYLKO pliku o nazwie 'ludnosc.csv' (bez fallbacków na inne nazwy),
+    żeby program nie wczytywał przypadkiem starego słownika.
+
+    Szukamy w kolejności:
+      1) folder raportu (jeśli podany)
+      2) folder bazy (tam gdzie Polska.xlsx; to jest base_dir)
+
+    Jeśli nie znajdzie — rzucamy czytelny błąd z listą sprawdzonych ścieżek.
+    """
+    candidates: List[Path] = []
+
+    if report_path:
+        try:
+            rp = Path(report_path).resolve()
+            candidates.append(rp.parent / "ludnosc.csv")
+        except Exception:
+            pass
+
+    try:
+        candidates.append((base_dir / "ludnosc.csv").resolve())
+    except Exception:
+        candidates.append(base_dir / "ludnosc.csv")
+
     for p in candidates:
         try:
             if p.exists():
                 return p.resolve()
         except Exception:
-            pass
-    return None
+            continue
+
+    raise ManualUserError(
+        "Nie znaleziono pliku 'ludnosc.csv'.\\n"
+        "Umieść go w folderze z raportem albo w folderze bazy (tam gdzie Polska.xlsx).\\n"
+        "Sprawdzone ścieżki:\\n- " + "\\n- ".join(str(x) for x in candidates)
+    )
 
 
 class PopulationResolver:
@@ -260,6 +281,17 @@ class PopulationResolver:
         if not c_woj or not c_mia or not c_pop:
             raise ManualUserError(f"ludnosc.csv ma nieoczekiwany format (brak kolumn: woj/miejscowosc/ludnosc): {self.local_csv}")
 
+
+        # sanity check: oczekujemy ~100k rekordów (pełny SIMC). Jeśli jest dużo mniej,
+        # to prawie na pewno wczytujesz stary/niepełny plik.
+        if len(df.index) < 50000:
+            raise ManualUserError(
+                f"Wczytano tylko {len(df.index)} wierszy z pliku ludnosc.csv: {self.local_csv}\n"
+                "To wygląda jak stary/niepełny plik (np. tylko gminy). Podmień 'ludnosc.csv' "
+                "na wersję dla wszystkich miejscowości (~101k)."
+            )
+
+        loaded_rows = 0
         # brakujące admin-y nie blokują działania
         for _, r in df.iterrows():
             woj = r[c_woj] if c_woj else ""
@@ -272,6 +304,8 @@ class PopulationResolver:
                 continue
             key = self._make_key(str(woj), str(powiat), str(gmina), str(mia), str(dzl))
             self._local[key] = float(pop)
+            loaded_rows += 1
+        print(f"[PopulationResolver] używam: {self.local_csv} | wiersze={len(df.index)} | klucze={len(self._local)}")
 
     def get_population(self, woj="", powiat="", gmina="", miejscowosc="", dzielnica="") -> Optional[float]:
         if not self._local:
@@ -644,7 +678,7 @@ _CACHE: Dict[str, Any] = {
 }
 
 
-def _get_cached_index_and_pop(base_dir: Path) -> Tuple[PolskaIndex, Optional[PopulationResolver]]:
+def _get_cached_index_and_pop(base_dir: Path, report_path: Optional[Path] = None) -> Tuple[PolskaIndex, Optional[PopulationResolver]]:
     polska_path = (base_dir / "Polska.xlsx").resolve()
     if not polska_path.exists():
         raise ManualUserError(f"Nie znaleziono pliku: {polska_path}")
@@ -652,7 +686,7 @@ def _get_cached_index_and_pop(base_dir: Path) -> Tuple[PolskaIndex, Optional[Pop
     polska_mtime = polska_path.stat().st_mtime
 
     # ludnosc
-    ludnosc_path = _find_ludnosc_csv(base_dir)
+    ludnosc_path = _find_ludnosc_csv(base_dir, report_path=report_path)
     ludnosc_mtime = ludnosc_path.stat().st_mtime if ludnosc_path and ludnosc_path.exists() else None
 
     # Polska.xlsx cache
@@ -700,6 +734,7 @@ def compute_and_save_row(
     idx: int,
     base_dir: Path,
     out_dir: Path,
+    report_path: Optional[Path] = None,
     margin_m2_default: float = 15.0,
     margin_pct_default: float = 15.0,
     min_hits: int = 5,
@@ -775,7 +810,7 @@ def compute_and_save_row(
         }
 
     # cache: Polska.xlsx index + ludnosc
-    pl_index, pop_resolver = _get_cached_index_and_pop(base_dir)
+    pl_index, pop_resolver = _get_cached_index_and_pop(base_dir, report_path=report_path)
 
     # ludność + progi
     pop_target = pop_resolver.get_population(woj_r, pow_r, gmi_r, mia_r, dzl_r) if pop_resolver else None
