@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 '''
+automat.py — Wersja B (BDL + lokalna ludność + bezpieczny zapis arkusza 'raport')
+
 FIX (17.12.2025+):
 - ludnosc.csv jest wczytywane OK (logi), ale brak trafień wynikał z różnic w nazwach (pow./powiat, gmina miejska..., nawiasy)
 - dodano kanonizację nazw jednostek (usuwa prefiksy/skrótowce/nawiasy)
