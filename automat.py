@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 '''
-automat.py — Wersja B (BDL + lokalna ludność + bezpieczny zapis arkusza 'raport')
-
 FIX (17.12.2025+):
 - ludnosc.csv jest wczytywane OK (logi), ale brak trafień wynikał z różnic w nazwach (pow./powiat, gmina miejska..., nawiasy)
 - dodano kanonizację nazw jednostek (usuwa prefiksy/skrótowce/nawiasy)
@@ -150,35 +148,44 @@ def _to_float_maybe(x):
 
 
 def _find_ludnosc_csv(baza_folder: Path, raport_path: Path, polska_path: Path) -> Path | None:
-    candidates = [
-        baza_folder / "ludnosc.csv",
-        polska_path.parent / "ludnosc.csv",
+    """
+    Szukamy *tylko* jednego źródła ludności: pliku `ludnosc.csv`.
+
+    Priorytet:
+      1) folder raportu (tam gdzie jest plik raportu / Polska.xlsx wybierana w GUI)
+      2) folder z `Polska.xlsx` (baza)
+      3) `baza_folder` przekazany do automatu
+
+    Dodatkowo: jeśli trafimy na „stary” plik (np. ~2k wierszy), ignorujemy go,
+    bo powinien być pełny (~100k rekordów).
+    """
+    env = os.getenv("LUDNOSC_CSV_PATH")
+    candidates: List[Path] = []
+    if env:
+        candidates.append(Path(env))
+    candidates += [
         raport_path.parent / "ludnosc.csv",
-        Path.cwd() / "ludnosc.csv",
-        baza_folder / "Ludnosc.csv",
-        polska_path.parent / "Ludnosc.csv",
-        raport_path.parent / "Ludnosc.csv",
+        polska_path.parent / "ludnosc.csv",
+        baza_folder / "ludnosc.csv",
     ]
+
+    def _looks_full(p: Path) -> bool:
+        try:
+            with p.open("r", encoding="utf-8-sig", errors="ignore") as f:
+                # -1 bo nagłówek
+                n = sum(1 for _ in f) - 1
+            return n >= 50000
+        except Exception:
+            return True  # nie blokuj w razie problemów z odczytem
+
     for p in candidates:
         try:
-            if p.exists():
-                return p.resolve()
+            if p.exists() and p.is_file():
+                if _looks_full(p):
+                    return p.resolve()
         except Exception:
             pass
     return None
-
-
-# =========================
-# Progi ludności
-# =========================
-
-POP_MARGIN_RULES = [
-    (0,      6000,   25.0, 15.0),
-    (6000,  20000,   20.0, 15.0),
-    (20000,  50000,   20.0, 15.0),
-    (50000,  200000,  15.0, 15.0),
-    (200000, None,    10.0, 15.0),
-]
 
 def configure_margins_gui():
     root = tk.Tk()
