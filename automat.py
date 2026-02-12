@@ -189,6 +189,22 @@ def _find_ludnosc_csv(baza_folder: Path, raport_path: Path, polska_path: Path) -
             pass
     return None
 
+
+
+# =========================
+# Progi ludności (domyślne)
+# (możesz je zmieniać w GUI: "Ustawienia progów ludności")
+# Format: (min_pop, max_pop | None, margin_m2, margin_pct)
+# =========================
+
+POP_MARGIN_RULES = [
+    (0,       6000,   25.0, 15.0),
+    (6000,   20000,   20.0, 15.0),
+    (20000,  50000,   20.0, 15.0),
+    (50000, 200000,   15.0, 15.0),
+    (200000,   None,  10.0, 15.0),
+]
+
 def configure_margins_gui():
     root = tk.Tk()
     root.title("Ustawienia progów ludności")

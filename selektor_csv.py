@@ -435,12 +435,13 @@ class App(tk.Tk):
                 out, err = proc.communicate()
                 rc = proc.returncode
             except Exception as e:
-                def on_error():
+                err_msg = str(e)
+                def on_error(msg=err_msg):
                     try:
                         self.clean_btn.config(bg="#f28b82", activebackground="#ea4335")
                     except Exception:
                         pass
-                    messagebox.showerror("Czyszczenie", f"Nie udało się uruchomić {script_path.name}:\n{e}")
+                    messagebox.showerror("Czyszczenie", f"Nie udało się uruchomić {script_path.name}:\n{msg}")
                 self.after(0, on_error)
                 return
 
@@ -633,12 +634,13 @@ class App(tk.Tk):
             try:
                 rc = automat.main(["automat.py", raport, baza])
             except Exception as e:
-                def on_error():
+                err_msg = str(e)
+                def on_error(msg=err_msg):
                     try:
                         self.automat_btn.config(bg="", activebackground="")
                     except Exception:
                         pass
-                    messagebox.showerror("Automat", f"Błąd działania automat.py:\n{e}")
+                    messagebox.showerror("Automat", f"Błąd działania automat.py:\n{msg}")
                 self.after(0, on_error)
                 return
 
